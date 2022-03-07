@@ -145,13 +145,24 @@ class TaskGraph(nx.DiGraph):
         self.layer_count = 0
         self.prev_range = None
         self.range = None
+        self.prev_task_list = []
 
     def add_layer(self,
                   task_list: List[Task],
                   option: TaskLayerChoices,
                   starting_idx: int):
         self.range = range(starting_idx, starting_idx + len(task_list))
-        node_list = zip(list(self.range), task_list)
+        # add dependencies to each task
+        for i, task in enumerate(task_list):
+            if option == TaskLayerChoices.one_to_one:
+                assert len(task_list) == len(self.prev_task_list)
+                task_list[i].task_dependencies = [self.prev_task_list[i]]
+            elif option == TaskLayerChoices.fully_connected:
+                task_list[i].task_dependencies = self.prev_task_list
+        # transform task list
+        ttask_list = [dict(task=t) for t in task_list]
+        # add nodes to graph
+        node_list = zip(list(self.range), ttask_list)
         self.add_nodes_from(node_list, layer=self.layer_count)
         self.layer_count += 1
         # need some way to specify which edges
@@ -159,44 +170,10 @@ class TaskGraph(nx.DiGraph):
             self.add_edges_from(zip(list(self.prev_range), list(self.range)))
         elif option == TaskLayerChoices.fully_connected:
             self.add_edges_from(itertools.product(self.prev_range, self.range))
+        # final updates
         self.prev_range = self.range
         self.range = None
-
-    def __init__(self, program):
-        super().__init__()
-
-        if program.system_type == SystemOptions.mapreduce:
-            # task_topology = (M, R)
-            M, R = program.task_topology
-            layers = [range(M), range(M, M+R)]
-
-            for (i, layer) in enumerate(layers):
-                # list of Task objects
-                if i == 0:  # Map
-                    task_list = [dict(task=Task(task_id=t_id))
-                                 for t_id in layer]
-                else:  # Reduce
-                    task_list = [dict(task=Task(task_id=t_id))
-                                 for t_id in layer]
-                node_list = list(zip(list(layer), task_list))
-                print(node_list)
-                self.add_nodes_from(node_list, layer=i)
-            for layer1, layer2 in nx.utils.pairwise(layers):
-                self.add_edges_from(itertools.product(layer1, layer2))
-        else:
-            extents = nx.utils.pairwise(
-                itertools.accumulate((0,) + program.task_topology))
-            print(extents)
-            layers = [range(start, end) for start, end in extents]
-            print(layers)
-            for (i, layer) in enumerate(layers):
-                # list of Task objects
-                task_list = [dict(task=Task(task_id=t_id)) for t_id in layer]
-                node_list = list(zip(list(layer), task_list))
-                print(node_list)
-                self.add_nodes_from(node_list, layer=i)
-            for layer1, layer2 in nx.utils.pairwise(layers):
-                self.add_edges_from(itertools.product(layer1, layer2))
+        self.prev_task_list = task_list
 
     def debug(self):
         print("debugging graph\n")
@@ -217,6 +194,7 @@ class WorkerGraph(nx.DiGraph):
     workers = []
 
     def __init__(self, workers, max_distance):
+        super().__init__()
         self.workers = workers
         self.free_workers = workers
         self.max_distance = max_distance
@@ -224,7 +202,8 @@ class WorkerGraph(nx.DiGraph):
 
     def seed_network_topology(self):
         # add all combinational pairs
-        idxs = range(len(self.workers))
+        idxs = list(range(len(self.workers)))
+        print(idxs)
         self.add_nodes_from(idxs)
         weighted_edge_triples = []
         for x in itertools.combinations(idxs, 2):
@@ -238,8 +217,8 @@ class WorkerGraph(nx.DiGraph):
     def pop(self):
         return self.free_workers.pop()
 
-    def append(self):
-        return self.free_workers.append()
+    def append(self, new_worker):
+        return self.free_workers.append(new_worker)
 
     def print_graph(self):
         labels = nx.get_edge_attributes(self, 'bandwidth')

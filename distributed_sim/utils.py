@@ -1,7 +1,7 @@
 from .architecture import *
 
 
-def seed_workers(num_mach: int) -> WorkerGraph:
+def seed_workers(num_mach: int, max_distance: int) -> WorkerGraph:
     init_workers = []
     for i in range(num_mach):
         worker = None
@@ -14,4 +14,4 @@ def seed_workers(num_mach: int) -> WorkerGraph:
         else:
             worker = Worker()
         init_workers.append(worker)
-    return WorkerGraph(init_workers)
+    return WorkerGraph(init_workers, max_distance)

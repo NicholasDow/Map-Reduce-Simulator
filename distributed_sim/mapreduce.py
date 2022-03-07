@@ -7,12 +7,14 @@ class MRProcedure:
 
     def __init__(self,
                  num_machines: int,
+                 max_distance: int,
                  n_records: int,
-                 prog_type: MReduceProg = MReduceProg.sort):
+                 prog_type: MReduceProg):
         self.num_machines = num_machines
+        self.max_distance = max_distance
         self.n_records = n_records
         self.prog = prog_type
-        self.workers = seed_workers(num_machines)
+        self.workers = seed_workers(num_machines, max_distance)
         self.task_graph = None
         if self.prog == MReduceProg.distributedgrep:
             self.task_graph = self._build_grep(
@@ -25,9 +27,13 @@ class MRProcedure:
     @staticmethod
     def translate_op(op: MReduceOp) -> List[CommonOp]:
         if op == MReduceOp.map:
-            pass
+            return [CommonOp.read_disk,
+                    CommonOp.compute,
+                    CommonOp.write_disk]
         elif op == MReduceOp.reduce:
-            pass
+            return [CommonOp.read_remote,
+                    CommonOp.compute,
+                    CommonOp.write_disk]
 
     @staticmethod
     def _build_grep(num_mach: int, n_rec: int) -> TaskGraph:
@@ -78,8 +84,8 @@ class MRProcedure:
                 Task(parent_prog=MReduceProg.distributedsort,
                      task_id=i+num_mach+1, task_op=MReduceOp.reduce, n_records=dist))
         t.add_layer(reducetask_list, starting_idx=num_mach+1,
-                    option=TaskLayerChoices.one_to_one)
+                    option=TaskLayerChoices.fully_connected)
         return t
 
-    def execute(self):
+    def run(self):
         self.scheduler.simulate()
