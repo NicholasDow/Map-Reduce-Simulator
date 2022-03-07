@@ -1,3 +1,4 @@
+from functools import reduce
 import networkx as nx
 import matplotlib.pyplot as plt
 import itertools
@@ -70,37 +71,49 @@ class Worker:
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
-        # can't have this for reasons in scheduler
-        # total_processing_time += self.networking_time()
-        total_processing_time += self.disk_time()
-
         task_op = self.task.task_op
-        n_rec = self.task.n_records
-        task_parent = self.task.prog
-        if task_parent == MReduceProg.distributedsort:
-            total_processing_time += n_rec * np.log(n_rec)
-        if task_parent == MReduceProg.distributedgrep:
-            total_processing_time += n_rec
 
+        if task_op == MReduceOp.map:
+            # can't have this for reasons in scheduler
+            # total_processing_time += self.networking_time()
+            total_processing_time += self.disk_time()
+
+            n_rec = self.task.n_records
+            task_parent = self.task.prog
+            if task_parent == MReduceProg.distributedsort:
+                total_processing_time += n_rec * np.log(n_rec)
+            if task_parent == MReduceProg.distributedgrep:
+                total_processing_time += n_rec
+
+        elif task_op == MReduceOp.reduce:
+            if task_parent == MReduceProg.distributedgrep:
+                total_processing_time = (1/self.network_bandwidth)
+            elif task_parent == MReduceProg.distributedsort:
+                equal_distance = 10
+                # assuming uniform distance
+                total_processing_time = (
+                    1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
+
+        else:
+            # I don't know what to do about shuffle
+            if task_parent == MReduceProg.distributedsort:
+                total_processing_time = 5
         return [EventType.TERMINATE, total_processing_time]
 
-    def networking_time(self):
-        # TODO: Have this function actually calculate networking time given its attributes
-        # self.task.task_dependencies
-        return 5
-
     def disk_time(self):
-        # TODO: Have this function actually calculate networking time given its attributes
+        # TODO: Have this function calculate networking time given its attributes
         size_of_record = 16
         size_of_records = self.task.n_records * size_of_record
         if self.task.prog == MReduceProg.distributedsort:
             # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
             # I don't know what the size of the records are, we assume a tall cache.
-            disk_time = (size_of_records/self.cache_lines) * \
-                math.log(size_of_records, self.cache_size)
+            # I also assume that we have 2n that we have to write to memory
+            disk_time = (1/self.disk_bandwidth) * ((size_of_records/self.cache_lines) *
+                                                   math.log(size_of_records, self.cache_size) + 2*size_of_records)
         if self.task.prog == MReduceProg.distributedgrep:
-            disk_time = size_of_records/(self.cache_lines)
-        return (1/self.disk_bandwidth) * disk_time
+            disk_time = (1/self.disk_bandwidth) * \
+                size_of_records/(self.cache_lines)
+        return disk_time
 
     def debug(self):
         print("straggle count: ", self.straggle_cnt)
@@ -219,7 +232,6 @@ class WorkerGraph(nx.DiGraph):
     def seed_network_topology(self):
         # add all combinational pairs
         idxs = list(range(len(self.workers)))
-        print(idxs)
         self.add_nodes_from(idxs)
         weighted_edge_triples = []
         for x in itertools.combinations(idxs, 2):
@@ -279,7 +291,7 @@ class Scheduler:
         self.total_time = 0
         self.failure_penalty = failure_penalty
 
-    def simulate(self) -> None:
+    def simulate(self) -> bool:
         # choose a first task from the head of the queue
         # task is ready
         # hashmap of workers which stores the busy/free workers
@@ -292,12 +304,20 @@ class Scheduler:
         free_worker_list = self.workers  # list to store the free workers
 
         # add the ready tasks to the queue
+        tasks_complete = True
         for node_number in self.g.nodes:
             node = self.g.nodes[node_number]
+            if node["task"].status != TaskStatus.COMPLETE:
+                tasks_complete = False
             if (node["task"].task_dependencies == 0
                     and node["task"].status == TaskStatus.UNASSIGNED):
                 node["task"].status = TaskStatus.PENDING
                 task_queue.put(node["task"])
+            if tasks_complete:
+                # stops simulation forever
+                print("------final time------")
+                print(self.total_time)
+                return False
 
         self.g.debug()
 
@@ -352,7 +372,8 @@ class Scheduler:
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
                 free_worker_list.append(worker)
-
-        print(f"Last event time: {last_event.time}")
-        self.total_time += last_event.time
-        return None
+        if not last_event is None:
+            print(f"Last event time: {last_event.time}")
+            self.total_time += last_event.time
+        # allows simulation to continue
+        return True
