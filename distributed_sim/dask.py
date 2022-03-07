@@ -9,3 +9,10 @@
 # - update runtime state to record finished task
 # - mark which new tasks can be run, data to be released
 # - choose task to give worker from set of ready-to-run tasks
+
+from .types import *
+
+
+class BlockedAlgorithm:
+    def __init__(self):
+        raise "not implemented"

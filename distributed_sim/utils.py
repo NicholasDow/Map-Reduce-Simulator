@@ -2,40 +2,29 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import itertools
 import numpy as np
-from enum import Enum
 from typing import List, Union, Tuple
 
 from queue import Queue, PriorityQueue
 
-
-class EventType(Enum):
-    TERMINATE = 1
-    FAIL = 2
-    STRAGGLE = 3
-
-
-class WorkerStatus(Enum):
-    FREE = 1
-    FAILED = 2
-    BUSY = 3
-
-
-class TaskStatus(Enum):
-    COMPLETE = 1
-    PENDING = 2
-    UNASIGGNED = 3
+from .types import *
 
 
 class Task:
     def __init__(self, task_id: int = 0,
-                 task_parameters={"task_type": "sort", "n_records": 1000},
+                 task_op: Union[MReduceOp, DaskOp] = MReduceOp.map,
+                 n_records: int = 1000,
                  task_status: TaskStatus = TaskStatus.PENDING,
                  task_dependencies=0) -> None:
         # This task_id becomes the node number when we construct the task graph
+        self.n_records = n_records
         self.task_id = task_id
+        self.task_op = task_op
         self.status = task_status
         self.task_dependencies = task_dependencies
-        self.task_parameters = task_parameters
+        self.task_parameters = {
+            "task_type": self.task_op.name,
+            "n_records": self.n_records,
+        }
 
     def debug(self):
         print("task_id: ", self.task_id)
@@ -113,23 +102,26 @@ class Program:
     program_type = None  # "sort", "grep", or etc.
     system_type = None  # "mapreduce", "dask", or etc.
 
-    def __init__(self, program_type="", system_type="", task_topology=[], **kwargs):
+    def __init__(self, program_type: Union[MReduceOp, DaskOp],
+                 system_type: SystemOptions = SystemOptions.mapreduce,
+                 task_topology=[], **kwargs):
         self.program_type = program_type
         self.system_type = system_type
         self.task_topology = task_topology
 
 
 class TaskGraph(nx.DiGraph):
+    subset_color = [
+        "gold",
+        "violet",
+        "limegreen",
+        "darkorange",
+    ]
+
     def __init__(self, program):
         super().__init__()
-        self.subset_color = [
-            "gold",
-            "violet",
-            "limegreen",
-            "darkorange",
-        ]
 
-        if program.system_type == "mapreduce":
+        if program.system_type == SystemOptions.mapreduce:
             # task_topology = (M, R)
             M, R = program.task_topology
             layers = [range(M), range(M, M+R)]
@@ -162,8 +154,6 @@ class TaskGraph(nx.DiGraph):
             for layer1, layer2 in nx.utils.pairwise(layers):
                 self.add_edges_from(itertools.product(layer1, layer2))
 
-        print(self)
-
     def debug(self):
         print("debugging graph\n")
         for node in self.nodes:
@@ -182,13 +172,22 @@ class TaskGraph(nx.DiGraph):
 class WorkerGraph(nx.DiGraph):
     workers = []
 
-    def add_workers(self, workers):
+    def __init__(self, workers):
         self.workers = workers
         idxs = range(len(workers))
         self.add_nodes_from(idxs)
         # add all combinational pairs
         self.add_weighted_edges_from(
             [x + (0,) for x in itertools.combinations(idxs, 2)], 'bandwidth')
+
+    def empty(self) -> bool:
+        return len(self.workers) == 0
+
+    def pop(self):
+        return self.workers.pop()
+
+    def append(self):
+        return self.workers.append()
 
     def print_graph(self):
         labels = nx.get_edge_attributes(self, 'bandwidth')
@@ -224,9 +223,9 @@ class WorkerGraph(nx.DiGraph):
 
 class Scheduler:
 
-    def __init__(self, task_graph: TaskGraph, Workers: List[Worker]) -> None:
-        self.G = task_graph  # Graph of tasks
-        self.Workers = Workers  # List of workers
+    def __init__(self, task_graph: TaskGraph, workers: WorkerGraph) -> None:
+        self.g = task_graph  # Graph of tasks
+        self.workers = workers  # List of workers
 
     def simulate(self) -> None:
         # choose a first task from the head of the queue
@@ -238,24 +237,24 @@ class Scheduler:
         current_time = 0
         task_queue = Queue()  # task queue as a topologically sorted task graph
         event_queue = PriorityQueue()  # priority queue for events
-        free_worker_list = self.Workers  # list to store the free workers
+        free_worker_list = self.workers  # list to store the free workers
 
-        print(self.G.nodes)
+        print(self.g.nodes)
         # initiliaze the task dependency numbers
-        for node_number in self.G.nodes:
+        for node_number in self.g.nodes:
             # TODO: add task_dependencies to TaskGraph()
-            node = self.G.nodes[node_number]
-            node["task"].task_dependencies = self.G.in_degree(node_number)
+            node = self.g.nodes[node_number]
+            node["task"].task_dependencies = self.g.in_degree(node_number)
             if (node["task"].task_dependencies == 0):
                 # add the ready tasks to the queue
                 task_queue.put(node["task"])
 
-        self.G.debug()
+        self.g.debug()
 
         print("starting to work through task_queue.\n")
         while not task_queue.empty():  # iterate through the tasks that are ready to execute
             task = task_queue.get()  # get the first task from the queue
-            if len(free_worker_list) == 0:
+            if free_worker_list.empty():
                 break
             worker = free_worker_list.pop()  # remove a worker from the free_list
             worker.task = task  # assign the task to the worker
@@ -275,16 +274,16 @@ class Scheduler:
             # print(event)
             # print("processed an event")
             if (event.event_type == EventType.TERMINATE):
-                #print("in here")
+                # print("in here")
                 worker = event.worker
                 worker.task.status = TaskStatus.COMPLETE
                 # get the out-edges of a task
-                for k in (self.G[worker.task.task_id].keys()):
+                for k in (self.g[worker.task.task_id].keys()):
                     # decrement the dependecies of all out_going edges
-                    self.G.nodes[k]["task"].task_dependencies -= 1
+                    self.g.nodes[k]["task"].task_dependencies -= 1
                     # if dependencies of a task are 0, it is ready to be added into the task queue
-                    if (self.G.nodes[k]["task"].task_dependencies == 0):
-                        task_queue.put(self.G.nodes[k]["task"])
+                    if (self.g.nodes[k]["task"].task_dependencies == 0):
+                        task_queue.put(self.g.nodes[k]["task"])
                 # print("got out of for loop")
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
