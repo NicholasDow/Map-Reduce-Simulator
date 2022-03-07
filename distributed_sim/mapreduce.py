@@ -25,9 +25,13 @@ class MRProcedure:
     @staticmethod
     def translate_op(op: MReduceOp) -> List[CommonOp]:
         if op == MReduceOp.map:
-            pass
+            return [CommonOp.read_disk,
+                    CommonOp.compute,
+                    CommonOp.write_disk]
         elif op == MReduceOp.reduce:
-            pass
+            return [CommonOp.read_remote,
+                    CommonOp.compute,
+                    CommonOp.write_disk]
 
     @staticmethod
     def _build_grep(num_mach: int, n_rec: int) -> TaskGraph:
