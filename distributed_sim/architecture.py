@@ -40,6 +40,7 @@ class Task:
 class Worker:
     def __init__(self,
                  worker_id: int,
+                 max_straggle_time: int = 100,  # cap straggle time at 100s
                  network_bandwidth: int = 100,
                  disk_bandwidth: int = 50,
                  failure_rate: int = 0.1,
@@ -58,6 +59,8 @@ class Worker:
         self.straggle_rate = straggle_rate
         self.cache_size = cache_size
         self.cache_lines = cache_lines
+        self.straggle_cnt = 0
+        self.max_straggle_time = max_straggle_time
 
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
@@ -98,6 +101,9 @@ class Worker:
         if self.task.prog == MReduceProg.distributedgrep:
             disk_time = size_of_records/(self.cache_lines)
         return (1/self.disk_bandwidth) * disk_time
+
+    def debug(self):
+        print("straggle count: ", self.straggle_cnt)
 
 
 class Event:
@@ -168,6 +174,7 @@ class TaskGraph(nx.DiGraph):
                 task_list[i].dependency_l = [self.prev_task_list[i]]
             elif option == TaskLayerChoices.fully_connected:
                 task_list[i].dependency_l = self.prev_task_list
+            task_list[i].task_dependencies = len(task_list[i].dependency_l)
         # transform task list
         ttask_list = [dict(task=t) for t in task_list]
         # add nodes to graph
@@ -263,9 +270,14 @@ class WorkerGraph(nx.DiGraph):
 
 class Scheduler:
 
-    def __init__(self, task_graph: TaskGraph, workers: WorkerGraph) -> None:
+    def __init__(self,
+                 task_graph: TaskGraph,
+                 workers: WorkerGraph,
+                 failure_penalty: int) -> None:
         self.g = task_graph  # Graph of tasks
         self.workers = workers  # List of workers
+        self.total_time = 0
+        self.failure_penalty = failure_penalty
 
     def simulate(self) -> None:
         # choose a first task from the head of the queue
@@ -279,14 +291,12 @@ class Scheduler:
         event_queue = PriorityQueue()  # priority queue for events
         free_worker_list = self.workers  # list to store the free workers
 
-        print(self.g.nodes)
-        # initiliaze the task dependency numbers
+        # add the ready tasks to the queue
         for node_number in self.g.nodes:
-            # TODO: add task_dependencies to TaskGraph()
             node = self.g.nodes[node_number]
-            node["task"].task_dependencies = self.g.in_degree(node_number)
-            if (node["task"].task_dependencies == 0):
-                # add the ready tasks to the queue
+            if (node["task"].task_dependencies == 0
+                    and node["task"].status == TaskStatus.UNASSIGNED):
+                node["task"].status = TaskStatus.PENDING
                 task_queue.put(node["task"])
 
         self.g.debug()
@@ -301,9 +311,22 @@ class Scheduler:
             worker.status = WorkerStatus.BUSY
             # get the approximate processing time and the probabilistic fate of the worker
             event_type, task_process_time = worker.processing_time()
+            # fail an event (i.e. put at back of queue)
+            if random.random() < worker.failure_rate:
+                task_queue.put(worker)
+                self.total_time += self.failure_penalty
+                continue
+            # straggle with some probability
+            straggle_time = 0
+            if random.random() < worker.straggle_rate:
+                worker.straggle_cnt += 1
+                straggle_time = abs(np.random.normal(
+                    0, worker.max_straggle_time, 1)[0])
             # create an event with the above parameters
-            event = Event(current_time + task_process_time, event_type, worker)
-            event_queue.put(event)  # add the event to the event queue
+            event = Event(current_time + task_process_time +
+                          straggle_time, event_type, worker)
+            # add the event to the event queue
+            event_queue.put(event)
 
         last_event = None
         print("starting to work through event_queue.\n")
@@ -331,4 +354,5 @@ class Scheduler:
                 free_worker_list.append(worker)
 
         print(f"Last event time: {last_event.time}")
+        self.total_time += last_event.time
         return None
