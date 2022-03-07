@@ -89,4 +89,5 @@ class MRProcedure:
         return t
 
     def run(self):
-        self.scheduler.simulate()
+        while self.scheduler.simulate():
+            continue
