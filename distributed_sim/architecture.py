@@ -7,6 +7,7 @@ from enum import Enum, auto
 from queue import Queue, PriorityQueue
 import random
 from .types import *
+import math
 
 
 class Task:
@@ -43,7 +44,8 @@ class Worker:
                  straggle_rate: int = 0.4,
                  task: Task = None,
                  status: WorkerStatus = WorkerStatus.FREE,
-                 memory: int = 1024) -> None:
+                 cache_size: int = 64,
+                 cache_lines: int = 1024) -> None:
         # assume infinite memory size
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
@@ -51,27 +53,13 @@ class Worker:
         self.task = task
         self.failure_rate = failure_rate
         self.straggle_rate = straggle_rate
-        self.memory = 1024
+        self.cache_size = 64
+        self.cache_lines = 1024 
 
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
 
     def processing_time(self) -> List[Union[EventType, int]]:
-        total_processing_time = 0
-
-        total_processing_time += self.networking_time()
-        total_processing_time += self.disk_time()
-
-        task_op = self.task.task_op
-        n_rec = self.task.n_records
-        # use task and worker parameters to figure out the procesing time for the worker
-        if task_op == MReduceOp.sort:
-            total_processing_time += n_rec * np.log(n_rec)
-        if task_op == MReduceOp.reduce:
-            total_processing_time += n_rec
-        
-
-
         total_processing_time = 0
         total_processing_time += self.networking_time()
         total_processing_time += self.disk_time()
@@ -92,10 +80,15 @@ class Worker:
 
     def disk_time(self):
         # TODO: Have this function actually calculate networking time given its attributes
-        if task_parent == MReduceProg.distributedsort:
-            # I am using this: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
-            time = (1/self.disk_bandwidth) * ()
-        return 5
+        size_of_record = 16
+        size_of_records = self.task.n_records * size_of_record
+        if self.task.prog == MReduceProg.distributedsort:
+            # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
+            # I don't know what the size of the records are, we assume a tall cache.
+            disk_time =  (size_of_records/self.cache_lines) * math.log(size_of_records, self.cache_size)
+        if self.task.prog == MReduceProg.distributedgrep:
+            disk_time = size_of_records/(self.cache_lines)
+        return (1/self.disk_bandwidth) * disk_time
 
 
 class Event:
