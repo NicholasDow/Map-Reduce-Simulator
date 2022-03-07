@@ -38,6 +38,7 @@ class Task:
 
 class Worker:
     def __init__(self,
+                 worker_id: int,
                  network_bandwidth: int = 100,
                  disk_bandwidth: int = 50,
                  failure_rate: int = 0.1,
@@ -47,7 +48,7 @@ class Worker:
                  cache_size: int = 64,
                  cache_lines: int = 1024) -> None:
         # assume infinite memory size
-
+        self.worker_id = worker_id
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
         self.status = status
@@ -55,13 +56,13 @@ class Worker:
         self.failure_rate = failure_rate
         self.straggle_rate = straggle_rate
         self.cache_size = cache_size
-        self.cache_lines = cache_lines 
+        self.cache_lines = cache_lines
 
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
 
     def check_distance(self, graph, other_worker):
-
+        
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
         total_processing_time += self.networking_time()
@@ -74,7 +75,7 @@ class Worker:
             total_processing_time += n_rec * np.log(n_rec)
         if task_parent == MReduceProg.distributedgrep:
             total_processing_time += n_rec
-        
+
         return [EventType.TERMINATE, total_processing_time]
 
     def networking_time(self):
@@ -89,7 +90,8 @@ class Worker:
         if self.task.prog == MReduceProg.distributedsort:
             # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
             # I don't know what the size of the records are, we assume a tall cache.
-            disk_time =  (size_of_records/self.cache_lines) * math.log(size_of_records, self.cache_size)
+            disk_time = (size_of_records/self.cache_lines) * \
+                math.log(size_of_records, self.cache_size)
         if self.task.prog == MReduceProg.distributedgrep:
             disk_time = size_of_records/(self.cache_lines)
         return (1/self.disk_bandwidth) * disk_time
