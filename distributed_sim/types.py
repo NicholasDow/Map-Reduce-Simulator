@@ -6,14 +6,25 @@ class SystemOptions(Enum):
     mapreduce = auto()
 
 
+class CommonOp(Enum):
+    startup = auto()
+    compute = auto()
+    read_remote = auto()
+    write_remote = auto()
+    read_disk = auto()
+    write_disk = auto()
+
+
 class MReduceProg(Enum):
-    sort = auto()
-    grep = auto()
+    distributedsort = auto()
+    distributedgrep = auto()
 
 
 class MReduceOp(Enum):
     map = auto()
     reduce = auto()
+    sort = auto()
+    shuffle = auto()
 
 
 class DaskProg(Enum):
@@ -47,4 +58,4 @@ class WorkerStatus(Enum):
 class TaskStatus(Enum):
     COMPLETE = auto()
     PENDING = auto()
-    UNASIGNED = auto()
+    UNASSIGNED = auto()
