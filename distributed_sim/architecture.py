@@ -5,7 +5,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import itertools
 import numpy as np
-from typing import List, Union, Tuple
+from typing import Dict, List, Union, Tuple
 from enum import Enum, auto
 from queue import Queue, PriorityQueue
 import random
@@ -376,6 +376,7 @@ class Scheduler:
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
+<<<<<<< Updated upstream
                 self.free_worker_list.append(worker)
         # check the last event
         if not last_event is None:
@@ -383,3 +384,92 @@ class Scheduler:
             self.curr_time += last_event.time
         # allows simulation to continue
         return True
+=======
+                free_worker_list.append(worker)
+
+        print(f"Last event time: {last_event.time}")
+        return None
+
+class DaskGraph:
+    def __init__(self, graph: Dict) -> None:
+        self.graph = graph
+
+class DaskScheduler:
+
+    def __init__(self, dask_graph:DaskGraph, task_graph: TaskGraph, workers: WorkerGraph) -> None:
+        self.dask_graph = dask_graph
+        self.g = task_graph  # Graph of tasks
+        self.workers = workers  # List of workers
+
+    def simulate(self) -> None:
+        # choose a first task from the head of the queue
+        # task is ready
+        # hashmap of workers which stores the busy/free workers
+        # assign task to the worker
+        # create an event, some time units for the task insert the event in priority queue
+
+        current_time = 0
+        task_queue = Queue()  # task queue as a topologically sorted task graph
+        event_queue = PriorityQueue()  # priority queue for events
+        free_worker_list = self.workers  # list to store the free workers
+
+        print(self.g.nodes)
+        # initiliaze the task dependency numbers
+        for node_number in self.g.nodes:
+            # TODO: add task_dependencies to TaskGraph()
+            node = self.g.nodes[node_number]
+            node["task"].task_dependencies = self.g.in_degree(node_number)
+            if (node["task"].task_dependencies == 0):
+                # add the ready tasks to the queue
+                task_queue.put(node["task"])
+
+        self.g.debug()
+
+        print("starting to work through task_queue.\n")
+        while not task_queue.empty():  # iterate through the tasks that are ready to execute
+            task = task_queue.get()  # get the first task from the queue
+            if free_worker_list.empty():
+                break
+            worker = free_worker_list.pop()  # remove a worker from the free_list
+            worker.task = task  # assign the task to the worker
+            worker.status = WorkerStatus.BUSY
+            # get the approximate processing time and the probabilistic fate of the worker
+            event_type, task_process_time = worker.processing_time()
+            # create an event with the above parameters
+            event = Event(current_time + task_process_time, event_type, worker)
+            event_queue.put(event)  # add the event to the event queue
+
+        last_event = None
+        print("starting to work through event_queue.\n")
+        while not event_queue.empty():
+            # print("processing an event")
+            event = event_queue.get()
+            last_event = event
+            # print(event)
+            # print("processed an event")
+            if (event.event_type == EventType.TERMINATE):
+                # print("in here")
+                worker = event.worker
+                worker.task.status = TaskStatus.COMPLETE
+                # get the out-edges of a task
+                for k in (self.g[worker.task.task_id].keys()):
+                    # decrement the dependecies of all out_going edges
+                    self.g.nodes[k]["task"].task_dependencies -= 1
+                    # if dependencies of a task are 0, it is ready to be added into the task queue
+                    if (self.g.nodes[k]["task"].task_dependencies == 0):
+                        task_queue.put(self.g.nodes[k]["task"])
+                # print("got out of for loop")
+                worker.task = None  # remove the task from the worker
+                worker.status = WorkerStatus.FREE  # mark the status of the worker to free
+                # add the worker to the free list
+                free_worker_list.append(worker)
+
+        print(f"Last event time: {last_event.time}")
+        return None
+
+
+    
+    
+
+
+>>>>>>> Stashed changes
