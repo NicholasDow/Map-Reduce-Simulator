@@ -67,7 +67,8 @@ class Worker:
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
-        total_processing_time += self.networking_time()
+        # can't have this for reasons in scheduler
+        # total_processing_time += self.networking_time()
         total_processing_time += self.disk_time()
 
         task_op = self.task.task_op
