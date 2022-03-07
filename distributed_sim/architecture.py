@@ -42,7 +42,8 @@ class Worker:
                  failure_rate: int = 0.1,
                  straggle_rate: int = 0.4,
                  task: Task = None,
-                 status: WorkerStatus = WorkerStatus.FREE) -> None:
+                 status: WorkerStatus = WorkerStatus.FREE,
+                 memory: int = 1024) -> None:
         # assume infinite memory size
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
@@ -50,6 +51,7 @@ class Worker:
         self.task = task
         self.failure_rate = failure_rate
         self.straggle_rate = straggle_rate
+        self.memory = 1024
 
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
@@ -67,7 +69,21 @@ class Worker:
             total_processing_time += n_rec * np.log(n_rec)
         if task_op == MReduceOp.reduce:
             total_processing_time += n_rec
+        
 
+
+        total_processing_time = 0
+        total_processing_time += self.networking_time()
+        total_processing_time += self.disk_time()
+
+        task_op = self.task.task_op
+        n_rec = self.task.n_records
+        task_parent = self.task.prog
+        if task_parent == MReduceProg.distributedsort:
+            total_processing_time += n_rec * np.log(n_rec)
+        if task_parent == MReduceProg.distributedgrep:
+            total_processing_time += n_rec
+        
         return [EventType.TERMINATE, total_processing_time]
 
     def networking_time(self):
@@ -76,6 +92,9 @@ class Worker:
 
     def disk_time(self):
         # TODO: Have this function actually calculate networking time given its attributes
+        if task_parent == MReduceProg.distributedsort:
+            # I am using this: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
+            time = (1/self.disk_bandwidth) * ()
         return 5
 
 
