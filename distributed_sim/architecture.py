@@ -24,6 +24,7 @@ class Task:
         self.status = task_status
         self.prog = parent_prog
         self.task_dependencies = task_dependencies
+        self.dependency_l = []
         self.task_parameters = {
             "task_type": self.task_op.name,
             "n_records": self.n_records,
@@ -62,7 +63,7 @@ class Worker:
         self.current_bandwidth = 0
 
     def check_distance(self, graph, other_worker):
-        
+
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
         total_processing_time += self.networking_time()
@@ -80,7 +81,7 @@ class Worker:
 
     def networking_time(self):
         # TODO: Have this function actually calculate networking time given its attributes
-        
+
         return 5
 
     def disk_time(self):
@@ -159,12 +160,12 @@ class TaskGraph(nx.DiGraph):
                   starting_idx: int):
         self.range = range(starting_idx, starting_idx + len(task_list))
         # add dependencies to each task
-        for i, task in enumerate(task_list):
+        for i, _ in enumerate(task_list):
             if option == TaskLayerChoices.one_to_one:
                 assert len(task_list) == len(self.prev_task_list)
-                task_list[i].task_dependencies = [self.prev_task_list[i]]
+                task_list[i].dependency_l = [self.prev_task_list[i]]
             elif option == TaskLayerChoices.fully_connected:
-                task_list[i].task_dependencies = self.prev_task_list
+                task_list[i].dependency_l = self.prev_task_list
         # transform task list
         ttask_list = [dict(task=t) for t in task_list]
         # add nodes to graph
