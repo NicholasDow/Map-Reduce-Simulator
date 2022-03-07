@@ -63,7 +63,7 @@ class Worker:
         # use task and worker parameters to figure out the procesing time for the worker
         if task_op == MReduceOp.sort:
             total_processing_time += n_rec * np.log(n_rec)
-        if task_op == MReduceOp.grep:
+        if task_op == MReduceOp.reduce:
             total_processing_time += n_rec
 
         return [EventType.TERMINATE, total_processing_time]
@@ -128,12 +128,25 @@ class TaskGraph(nx.DiGraph):
 
     def __init__(self):
         super().__init__()
+        self.layer_count = 0
+        self.prev_range = None
+        self.range = None
 
-    def add_layer(self, task_list: List[Task], option: TaskLayerChoices):
-        node_list = list(zip(list(layer), task_list))
-        self.add_nodes_from(node_list, layer=i)
-        print(node_list)
+    def add_layer(self,
+                  task_list: List[Task],
+                  option: TaskLayerChoices,
+                  starting_idx: int):
+        self.range = range(starting_idx, starting_idx + len(task_list))
+        node_list = zip(list(self.range), task_list)
+        self.add_nodes_from(node_list, layer=self.layer_count)
+        self.layer_count += 1
         # need some way to specify which edges
+        if option == TaskLayerChoices.one_to_one:
+            self.add_edges_from(zip(list(self.prev_range), list(self.range)))
+        elif option == TaskLayerChoices.fully_connected:
+            self.add_edges_from(itertools.product(self.prev_range, self.range))
+        self.prev_range = self.range
+        self.range = None
 
     def __init__(self, program):
         super().__init__()

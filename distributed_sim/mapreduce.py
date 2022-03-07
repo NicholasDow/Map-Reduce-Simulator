@@ -1,4 +1,3 @@
-from random import shuffle
 from .architecture import *
 from .utils import *
 from .types import *
@@ -40,13 +39,15 @@ class MRProcedure:
         for i in range(num_mach):
             maptask_list.append(
                 Task(task_id=i, task_op=MReduceOp.map, n_records=dist))
-        t.add_layer(maptask_list, option=TaskLayerChoices.first_layer)
+        t.add_layer(maptask_list, starting_idx=0,
+                    option=TaskLayerChoices.first_layer)
         # reduce tasks
         reducetask_list = []
         for i in range(num_mach):
             reducetask_list.append(
-                Task(task_id=i, task_op=MReduceOp.reduce, n_records=dist))
-        t.add_layer(reducetask_list, option=TaskLayerChoices.one_to_one)
+                Task(task_id=i+num_mach, task_op=MReduceOp.reduce, n_records=dist))
+        t.add_layer(reducetask_list, starting_idx=num_mach,
+                    option=TaskLayerChoices.one_to_one)
         return t
 
     @staticmethod
@@ -59,17 +60,20 @@ class MRProcedure:
         for i in range(num_mach):
             maptask_list.append(
                 Task(task_id=i, task_op=MReduceOp.map, n_records=dist))
-        t.add_layer(maptask_list, option=TaskLayerChoices.first_layer)
+        t.add_layer(maptask_list, starting_idx=0,
+                    option=TaskLayerChoices.first_layer)
         # shuffle task (synchro barrier)
         t.add_layer(
-            Task(task_id=num_mach, task_op=MReduceOp.shuffle, n_records=n_rec),
+            [Task(task_id=num_mach, task_op=MReduceOp.shuffle, n_records=n_rec)],
+            starting_idx=num_mach,
             option=TaskLayerChoices.fully_connected)
         # reduce tasks
         reducetask_list = []
         for i in range(num_mach):
             reducetask_list.append(
                 Task(task_id=i+num_mach+1, task_op=MReduceOp.reduce, n_records=dist))
-        t.add_layer(reducetask_list, option=TaskLayerChoices.one_to_one)
+        t.add_layer(reducetask_list, starting_idx=num_mach+1,
+                    option=TaskLayerChoices.one_to_one)
         return t
 
     def execute(self):
