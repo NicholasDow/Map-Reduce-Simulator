@@ -1,3 +1,5 @@
+"""Sets up the worker graph by setting parameters for each worker, such as failure_rate and straggle_rate. Workers are currently equistant from each other for the topology."""
+
 from .architecture import *
 
 

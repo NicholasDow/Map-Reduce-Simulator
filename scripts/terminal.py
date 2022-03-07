@@ -1,3 +1,5 @@
+"""Interactive program for running our simulator."""
+
 import click
 from distributed_sim import *
 

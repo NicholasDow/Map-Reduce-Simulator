@@ -1,3 +1,5 @@
+"""Contains types, which are enums we use in our code."""
+
 from enum import Enum, auto
 
 
