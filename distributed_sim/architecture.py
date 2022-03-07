@@ -47,7 +47,6 @@ class Worker:
                  cache_size: int = 64,
                  cache_lines: int = 1024) -> None:
         # assume infinite memory size
-        self.
 
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
