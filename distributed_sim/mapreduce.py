@@ -78,7 +78,6 @@ class MRProcedure:
                      task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=n_shuffle_tasks*shuffle_split))
         t.add_layer(reducetask_list, starting_idx=n_map_tasks + n_shuffle_tasks+1,
                     option=TaskLayerChoices.fully_connected)
-        t.print_graph()
         return t
 
     @staticmethod

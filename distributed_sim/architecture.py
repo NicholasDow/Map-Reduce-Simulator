@@ -71,18 +71,18 @@ class Worker:
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
-        self.task.debug()
-        assert self.task is not None
-        print(self.task.task_op)
-        if self.task.task_op == MReduceOp.map:
+        task = self.task
+        print(task)
+        print(type(task))
+        if task.task_op == MReduceOp.map:
             # can't have this for reasons in scheduler
             # total_processing_time += self.networking_time()
             total_processing_time += self.disk_time()
 
-            n_rec = self.task.n_records
-            task_parent = self.task.prog
+            n_rec = task.n_records
+            task_parent = task.prog
             total_processing_time += n_rec * np.log(n_rec)
-        elif self.task.task_op == MReduceOp.reduce:
+        elif task.task_op == MReduceOp.reduce:
             total_processing_time += self.disk_time()
             if task_parent == MReduceProg.distributedgrep:
                 total_processing_time = (1/self.network_bandwidth)
@@ -90,8 +90,8 @@ class Worker:
                 equal_distance = 10
                 # assuming uniform distance
                 total_processing_time = (
-                    1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
-        elif self.task.task_op == MReduceOp.shuffle:
+                    1/self.network_bandwidth) * 10 + 2*16*task.n_records * (1/self.disk_bandwidth)
+        elif task.task_op == MReduceOp.shuffle:
             total_processing_time += self.transfer_time()
         else:
             total_processing_time += 0
