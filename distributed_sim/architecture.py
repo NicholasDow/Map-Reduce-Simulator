@@ -361,19 +361,21 @@ class Scheduler:
             if (event.event_type == EventType.TERMINATE):
                 # print("in here")
                 worker = event.worker
-                worker.task.status = TaskStatus.COMPLETE
+                task = event.worker.task
+                task.status = TaskStatus.COMPLETE
                 # get the out-edges of a task
-                for k in (self.g[worker.task.task_id].keys()):
+                for k in (self.g[task.task_id].keys()):
                     # decrement the dependecies of all out_going edges
                     self.g.nodes[k]["task"].task_dependencies -= 1
                     # if dependencies of a task are 0, it is ready to be added into the task queue
-                    if (self.g.nodes[k]["task"].task_dependencies == 0):
+                    if self.g.nodes[k]["task"].task_dependencies == 0:
                         self.task_queue.put(self.g.nodes[k]["task"])
                 # print("got out of for loop")
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
                 self.free_worker_list.append(worker)
+        # check the last event
         if not last_event is None:
             print(f"Last event time: {last_event.time}")
             self.curr_time += last_event.time
