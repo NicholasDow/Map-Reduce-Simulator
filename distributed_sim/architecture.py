@@ -10,7 +10,8 @@ from .types import *
 
 
 class Task:
-    def __init__(self, task_id: int = 0,
+    def __init__(self, parent_prog: Union[MReduceProg, DaskProg],
+                 task_id: int = 0,
                  task_op: Union[CommonOp, MReduceOp, DaskOp] = MReduceOp.map,
                  n_records: int = 1000,
                  task_status: TaskStatus = TaskStatus.UNASSIGNED,
@@ -20,6 +21,7 @@ class Task:
         self.task_id = task_id
         self.task_op = task_op
         self.status = task_status
+        self.prog = parent_prog
         self.task_dependencies = task_dependencies
         self.task_parameters = {
             "task_type": self.task_op.name,

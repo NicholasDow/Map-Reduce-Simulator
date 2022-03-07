@@ -38,14 +38,16 @@ class MRProcedure:
         maptask_list = []
         for i in range(num_mach):
             maptask_list.append(
-                Task(task_id=i, task_op=MReduceOp.map, n_records=dist))
+                Task(parent_prog=MReduceProg.distributedgrep,
+                     task_id=i, task_op=MReduceOp.map, n_records=dist))
         t.add_layer(maptask_list, starting_idx=0,
                     option=TaskLayerChoices.first_layer)
         # reduce tasks
         reducetask_list = []
         for i in range(num_mach):
             reducetask_list.append(
-                Task(task_id=i+num_mach, task_op=MReduceOp.reduce, n_records=dist))
+                Task(parent_prog=MReduceProg.distributedgrep,
+                     task_id=i+num_mach, task_op=MReduceOp.reduce, n_records=dist))
         t.add_layer(reducetask_list, starting_idx=num_mach,
                     option=TaskLayerChoices.one_to_one)
         return t
@@ -59,19 +61,22 @@ class MRProcedure:
         maptask_list = []
         for i in range(num_mach):
             maptask_list.append(
-                Task(task_id=i, task_op=MReduceOp.map, n_records=dist))
+                Task(parent_prog=MReduceProg.distributedsort,
+                     task_id=i, task_op=MReduceOp.map, n_records=dist))
         t.add_layer(maptask_list, starting_idx=0,
                     option=TaskLayerChoices.first_layer)
         # shuffle task (synchro barrier)
         t.add_layer(
-            [Task(task_id=num_mach, task_op=MReduceOp.shuffle, n_records=n_rec)],
+            [Task(parent_prog=MReduceProg.distributedsort,
+                  task_id=num_mach, task_op=MReduceOp.shuffle, n_records=n_rec)],
             starting_idx=num_mach,
             option=TaskLayerChoices.fully_connected)
         # reduce tasks
         reducetask_list = []
         for i in range(num_mach):
             reducetask_list.append(
-                Task(task_id=i+num_mach+1, task_op=MReduceOp.reduce, n_records=dist))
+                Task(parent_prog=MReduceProg.distributedsort,
+                     task_id=i+num_mach+1, task_op=MReduceOp.reduce, n_records=dist))
         t.add_layer(reducetask_list, starting_idx=num_mach+1,
                     option=TaskLayerChoices.one_to_one)
         return t
