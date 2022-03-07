@@ -5,7 +5,7 @@ import numpy as np
 from typing import List, Union, Tuple
 from enum import Enum, auto
 from queue import Queue, PriorityQueue
-
+import random
 from .types import *
 
 
@@ -204,17 +204,21 @@ class TaskGraph(nx.DiGraph):
 class WorkerGraph(nx.DiGraph):
     workers = []
 
-    def __init__(self, workers):
+    def __init__(self, workers, max_distance):
         self.workers = workers
         self.free_workers = workers
+        self.max_distance = max_distance
         self.seed_network_topology()
 
     def seed_network_topology(self):
         # add all combinational pairs
         idxs = range(len(self.workers))
         self.add_nodes_from(idxs)
-        self.add_weighted_edges_from(
-            [x + (0,) for x in itertools.combinations(idxs, 2)], 'bandwidth')
+        weighted_edge_triples = []
+        for x in itertools.combinations(idxs, 2):
+            weighted_edge_triples.append(
+                x + (random.randint(1, self.max_distance),))
+        self.add_weighted_edges_from(weighted_edge_triples)
 
     def empty(self) -> bool:
         return len(self.free_workers) == 0
