@@ -376,15 +376,6 @@ class Scheduler:
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
-<<<<<<< Updated upstream
-                self.free_worker_list.append(worker)
-        # check the last event
-        if not last_event is None:
-            print(f"Last event time: {last_event.time}")
-            self.curr_time += last_event.time
-        # allows simulation to continue
-        return True
-=======
                 free_worker_list.append(worker)
 
         print(f"Last event time: {last_event.time}")
@@ -472,4 +463,3 @@ class DaskScheduler:
     
 
 
->>>>>>> Stashed changes
