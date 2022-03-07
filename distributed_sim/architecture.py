@@ -84,21 +84,21 @@ class Worker:
                 total_processing_time += n_rec * np.log(n_rec)
             if task_parent == MReduceProg.distributedgrep:
                 total_processing_time += n_rec
-            
+
         elif task_op == MReduceOp.reduce:
             if task_parent == MReduceProg.distributedgrep:
                 total_processing_time = (1/self.network_bandwidth)
             elif task_parent == MReduceProg.distributedsort:
                 equal_distance = 10
                 # assuming uniform distance
-                total_processing_time = (1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
-        
+                total_processing_time = (
+                    1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
+
         else:
             # I don't know what to do about shuffle
             if task_parent == MReduceProg.distributedsort:
                 total_processing_time = 5
         return [EventType.TERMINATE, total_processing_time]
-        
 
     def disk_time(self):
         # TODO: Have this function calculate networking time given its attributes
@@ -108,10 +108,11 @@ class Worker:
             # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
             # I don't know what the size of the records are, we assume a tall cache.
             # I also assume that we have 2n that we have to write to memory
-            disk_time = (1/self.disk_bandwidth) * ((size_of_records/self.cache_lines) * \
-                math.log(size_of_records, self.cache_size) + 2*size_of_records) 
+            disk_time = (1/self.disk_bandwidth) * ((size_of_records/self.cache_lines) *
+                                                   math.log(size_of_records, self.cache_size) + 2*size_of_records)
         if self.task.prog == MReduceProg.distributedgrep:
-            disk_time = (1/self.disk_bandwidth) * size_of_records/(self.cache_lines)
+            disk_time = (1/self.disk_bandwidth) * \
+                size_of_records/(self.cache_lines)
         return disk_time
 
     def debug(self):
@@ -371,8 +372,8 @@ class Scheduler:
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
                 free_worker_list.append(worker)
-
-        print(f"Last event time: {last_event.time}")
-        self.total_time += last_event.time
+        if not last_event is None:
+            print(f"Last event time: {last_event.time}")
+            self.total_time += last_event.time
         # allows simulation to continue
         return True
