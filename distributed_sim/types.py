@@ -2,8 +2,8 @@ from enum import Enum, auto
 
 
 class SystemOptions(Enum):
-    dask = auto()
-    mapreduce = auto()
+    dask = 1
+    mapreduce = 2
 
 
 class CommonOp(Enum):
@@ -16,8 +16,8 @@ class CommonOp(Enum):
 
 
 class MReduceProg(Enum):
-    distributedsort = auto()
-    distributedgrep = auto()
+    distributedsort = 1
+    distributedgrep = 2
 
 
 class MReduceOp(Enum):
@@ -25,6 +25,7 @@ class MReduceOp(Enum):
     reduce = auto()
     sort = auto()
     shuffle = auto()
+    barrier = auto
 
 
 class DaskProg(Enum):

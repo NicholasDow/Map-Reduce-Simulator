@@ -9,10 +9,10 @@ def system_input():
         click.echo(f"[{j.value}] {j.name}")
     sys_value = click.prompt('Please select a system', type=int)
     click.echo("Available Procedures: ")
-    if sys_value == SystemOptions.dask.value:
+    if sys_value == SystemOptions.mapreduce.value:
         for j in MReduceProg:
             click.echo(f"[{j.value}] {j.name}")
-    elif sys_value == SystemOptions.mapreduce.value:
+    elif sys_value == SystemOptions.dask.value:
         for j in DaskProg:
             click.echo(f"[{j.value}] {j.name}")
     prog_value = click.prompt('Please select a procedure', type=int)
