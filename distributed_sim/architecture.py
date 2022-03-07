@@ -1,3 +1,4 @@
+from functools import reduce
 import networkx as nx
 import matplotlib.pyplot as plt
 import itertools
@@ -70,37 +71,48 @@ class Worker:
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
-        # can't have this for reasons in scheduler
-        # total_processing_time += self.networking_time()
-        total_processing_time += self.disk_time()
-
         task_op = self.task.task_op
-        n_rec = self.task.n_records
-        task_parent = self.task.prog
-        if task_parent == MReduceProg.distributedsort:
-            total_processing_time += n_rec * np.log(n_rec)
-        if task_parent == MReduceProg.distributedgrep:
-            total_processing_time += n_rec
 
+        if task_op == MReduceOp.map:
+            # can't have this for reasons in scheduler
+            # total_processing_time += self.networking_time()
+            total_processing_time += self.disk_time()
+
+            n_rec = self.task.n_records
+            task_parent = self.task.prog
+            if task_parent == MReduceProg.distributedsort:
+                total_processing_time += n_rec * np.log(n_rec)
+            if task_parent == MReduceProg.distributedgrep:
+                total_processing_time += n_rec
+            
+        elif task_op == MReduceOp.reduce:
+            if task_parent == MReduceProg.distributedgrep:
+                total_processing_time = (1/self.network_bandwidth)
+            elif task_parent == MReduceProg.distributedsort:
+                equal_distance = 10
+                # assuming uniform distance
+                total_processing_time = (1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
+        
+        else:
+            # I don't know what to do about shuffle
+            if task_parent == MReduceProg.distributedsort:
+                total_processing_time = 5
         return [EventType.TERMINATE, total_processing_time]
-
-    def networking_time(self):
-        # TODO: Have this function actually calculate networking time given its attributes
-        # self.task.task_dependencies
-        return 5
+        
 
     def disk_time(self):
         # TODO: Have this function calculate networking time given its attributes
         size_of_record = 16
         size_of_records = self.task.n_records * size_of_record
         if self.task.prog == MReduceProg.distributedsort:
-            # I use the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
-            # without knowing size of records, we assume a tall cache.
-            disk_time = (size_of_records/self.cache_lines) * \
-                math.log(size_of_records, self.cache_size)
+            # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
+            # I don't know what the size of the records are, we assume a tall cache.
+            # I also assume that we have 2n that we have to write to memory
+            disk_time = (1/self.disk_bandwidth) * ((size_of_records/self.cache_lines) * \
+                math.log(size_of_records, self.cache_size) + 2*size_of_records) 
         if self.task.prog == MReduceProg.distributedgrep:
-            disk_time = size_of_records/(self.cache_lines)
-        return (1/self.disk_bandwidth) * disk_time
+            disk_time = (1/self.disk_bandwidth) * size_of_records/(self.cache_lines)
+        return disk_time
 
     def debug(self):
         print("straggle count: ", self.straggle_cnt)
