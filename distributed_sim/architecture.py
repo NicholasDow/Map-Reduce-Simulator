@@ -90,12 +90,12 @@ class Worker:
         return 5
 
     def disk_time(self):
-        # TODO: Have this function actually calculate networking time given its attributes
+        # TODO: Have this function calculate networking time given its attributes
         size_of_record = 16
         size_of_records = self.task.n_records * size_of_record
         if self.task.prog == MReduceProg.distributedsort:
-            # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
-            # I don't know what the size of the records are, we assume a tall cache.
+            # I use the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
+            # without knowing size of records, we assume a tall cache.
             disk_time = (size_of_records/self.cache_lines) * \
                 math.log(size_of_records, self.cache_size)
         if self.task.prog == MReduceProg.distributedgrep:
@@ -219,7 +219,6 @@ class WorkerGraph(nx.DiGraph):
     def seed_network_topology(self):
         # add all combinational pairs
         idxs = list(range(len(self.workers)))
-        print(idxs)
         self.add_nodes_from(idxs)
         weighted_edge_triples = []
         for x in itertools.combinations(idxs, 2):
