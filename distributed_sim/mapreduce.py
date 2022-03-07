@@ -25,7 +25,7 @@ class MRProcedure:
                 1, int((n_records*self.grep_selectivity)/self.split_size))
             self.n_reduce_tasks = 1
             self.task_graph = self._build_grep(
-                self.n_map_tasks, self.n_shuffle_tasks, self.n_reduce_tasks, self.split_size, self.shuffle_split)
+                self.n_map_tasks, self.n_shuffle_tasks, self.n_reduce_tasks, self.split_size, self.n_shuffle_split)
         if self.prog == MReduceProg.distributedsort:
             self.n_map_tasks = (int)(n_records / self.split_size)
             self.n_shuffle_tasks = self.n_map_tasks
@@ -78,6 +78,7 @@ class MRProcedure:
                      task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=n_shuffle_tasks*shuffle_split))
         t.add_layer(reducetask_list, starting_idx=n_map_tasks + n_shuffle_tasks+1,
                     option=TaskLayerChoices.fully_connected)
+        t.print_graph()
         return t
 
     @staticmethod
@@ -112,7 +113,6 @@ class MRProcedure:
                      task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=split_size))
         t.add_layer(reducetask_list, starting_idx=n_map_tasks + n_shuffle_tasks+1,
                     option=TaskLayerChoices.fully_connected)
-        t.print_graph()
         return t
 
     def run(self):

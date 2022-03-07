@@ -71,21 +71,19 @@ class Worker:
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
-        task_op = self.task.task_op
-
-        if task_op == MReduceOp.map:
+        self.task.debug()
+        assert self.task is not None
+        print(self.task.task_op)
+        if self.task.task_op == MReduceOp.map:
             # can't have this for reasons in scheduler
             # total_processing_time += self.networking_time()
             total_processing_time += self.disk_time()
 
             n_rec = self.task.n_records
             task_parent = self.task.prog
-            if task_parent == MReduceProg.distributedsort:
-                total_processing_time += n_rec * np.log(n_rec)
-            if task_parent == MReduceProg.distributedgrep:
-                total_processing_time += n_rec
-
-        elif task_op == MReduceOp.reduce:
+            total_processing_time += n_rec * np.log(n_rec)
+        elif self.task.task_op == MReduceOp.reduce:
+            total_processing_time += self.disk_time()
             if task_parent == MReduceProg.distributedgrep:
                 total_processing_time = (1/self.network_bandwidth)
             elif task_parent == MReduceProg.distributedsort:
@@ -93,11 +91,11 @@ class Worker:
                 # assuming uniform distance
                 total_processing_time = (
                     1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
-
+        elif self.task.task_op == MReduceOp.shuffle:
+            total_processing_time += self.transfer_time()
         else:
-            # I don't know what to do about shuffle
-            if task_parent == MReduceProg.distributedsort:
-                total_processing_time = 5
+            total_processing_time += 0
+
         return [EventType.TERMINATE, total_processing_time]
 
     def disk_time(self):
@@ -114,6 +112,11 @@ class Worker:
             disk_time = (1/self.disk_bandwidth) * \
                 size_of_records/(self.cache_lines)
         return disk_time
+
+    # TODO: fix network bandwidth
+    def transfer_time(self):
+        n_rec = self.task.n_records
+        return n_rec * np.log(n_rec) + self.network_bandwidth
 
     def debug(self):
         print("straggle count: ", self.straggle_cnt)
@@ -288,8 +291,11 @@ class Scheduler:
                  failure_penalty: int) -> None:
         self.g = task_graph  # Graph of tasks
         self.workers = workers  # List of workers
-        self.total_time = 0
+        self.curr_time = 0
         self.failure_penalty = failure_penalty
+        self.task_queue = Queue()  # task queue as a topologically sorted task graph
+        self.event_queue = PriorityQueue()  # priority queue for events
+        self.free_worker_list = self.workers  # list to store the free workers
 
     def simulate(self) -> bool:
         # choose a first task from the head of the queue
@@ -297,11 +303,6 @@ class Scheduler:
         # hashmap of workers which stores the busy/free workers
         # assign task to the worker
         # create an event, some time units for the task insert the event in priority queue
-
-        current_time = 0
-        task_queue = Queue()  # task queue as a topologically sorted task graph
-        event_queue = PriorityQueue()  # priority queue for events
-        free_worker_list = self.workers  # list to store the free workers
 
         # add the ready tasks to the queue
         tasks_complete = True
@@ -312,29 +313,29 @@ class Scheduler:
             if (node["task"].task_dependencies == 0
                     and node["task"].status == TaskStatus.UNASSIGNED):
                 node["task"].status = TaskStatus.PENDING
-                task_queue.put(node["task"])
+                self.task_queue.put(node["task"])
             if tasks_complete:
                 # stops simulation forever
                 print("------final time------")
-                print(self.total_time)
+                print(self.curr_time)
                 return False
 
-        self.g.debug()
+        # self.g.debug()
 
         print("starting to work through task_queue.\n")
-        while not task_queue.empty():  # iterate through the tasks that are ready to execute
-            task = task_queue.get()  # get the first task from the queue
-            if free_worker_list.empty():
+        while not self.task_queue.empty():  # iterate through the tasks that are ready to execute
+            task = self.task_queue.get()  # get the first task from the queue
+            if self.free_worker_list.empty():
                 break
-            worker = free_worker_list.pop()  # remove a worker from the free_list
+            worker = self.free_worker_list.pop()  # remove a worker from the free_list
             worker.task = task  # assign the task to the worker
             worker.status = WorkerStatus.BUSY
             # get the approximate processing time and the probabilistic fate of the worker
             event_type, task_process_time = worker.processing_time()
             # fail an event (i.e. put at back of queue)
             if random.random() < worker.failure_rate:
-                task_queue.put(worker)
-                self.total_time += self.failure_penalty
+                self.task_queue.put(worker)
+                self.curr_time += self.failure_penalty
                 continue
             # straggle with some probability
             straggle_time = 0
@@ -343,17 +344,17 @@ class Scheduler:
                 straggle_time = abs(np.random.normal(
                     0, worker.max_straggle_time, 1)[0])
             # create an event with the above parameters
-            event = Event(current_time + task_process_time +
+            event = Event(self.curr_time + task_process_time +
                           straggle_time, event_type, worker)
             # add the event to the event queue
-            event_queue.put(event)
+            self.event_queue.put(event)
 
         last_event = None
         print("starting to work through event_queue.\n")
-        print("size of event queue: ", len(event_queue))
-        while not event_queue.empty():
+        # print("size of event queue: ", len(list(event_queue)))
+        while not self.event_queue.empty():
             # print("processing an event")
-            event = event_queue.get()
+            event = self.event_queue.get()
             last_event = event
             # print(event)
             # print("processed an event")
@@ -367,14 +368,14 @@ class Scheduler:
                     self.g.nodes[k]["task"].task_dependencies -= 1
                     # if dependencies of a task are 0, it is ready to be added into the task queue
                     if (self.g.nodes[k]["task"].task_dependencies == 0):
-                        task_queue.put(self.g.nodes[k]["task"])
+                        self.task_queue.put(self.g.nodes[k]["task"])
                 # print("got out of for loop")
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
-                free_worker_list.append(worker)
+                self.free_worker_list.append(worker)
         if not last_event is None:
             print(f"Last event time: {last_event.time}")
-            self.total_time += last_event.time
+            self.curr_time += last_event.time
         # allows simulation to continue
         return True
