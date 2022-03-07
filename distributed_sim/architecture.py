@@ -279,7 +279,7 @@ class Scheduler:
         self.total_time = 0
         self.failure_penalty = failure_penalty
 
-    def simulate(self) -> None:
+    def simulate(self) -> bool:
         # choose a first task from the head of the queue
         # task is ready
         # hashmap of workers which stores the busy/free workers
@@ -292,12 +292,20 @@ class Scheduler:
         free_worker_list = self.workers  # list to store the free workers
 
         # add the ready tasks to the queue
+        tasks_complete = True
         for node_number in self.g.nodes:
             node = self.g.nodes[node_number]
+            if node["task"].status != TaskStatus.COMPLETE:
+                tasks_complete = False
             if (node["task"].task_dependencies == 0
                     and node["task"].status == TaskStatus.UNASSIGNED):
                 node["task"].status = TaskStatus.PENDING
                 task_queue.put(node["task"])
+            if tasks_complete:
+                # stops simulation forever
+                print("------final time------")
+                print(self.total_time)
+                return False
 
         self.g.debug()
 
@@ -355,4 +363,5 @@ class Scheduler:
 
         print(f"Last event time: {last_event.time}")
         self.total_time += last_event.time
-        return None
+        # allows simulation to continue
+        return True
