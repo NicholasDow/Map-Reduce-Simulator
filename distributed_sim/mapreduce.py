@@ -22,7 +22,8 @@ class MRProcedure:
         if self.prog == MReduceProg.distributedsort:
             self.task_graph = self._build_sort(
                 self.num_machines, self.n_records)
-        self.scheduler = Scheduler(self.task_graph, self.workers)
+        self.scheduler = Scheduler(
+            self.task_graph, self.workers, failure_penalty=10)
 
     @staticmethod
     def translate_op(op: MReduceOp) -> List[CommonOp]:
