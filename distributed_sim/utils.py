@@ -45,7 +45,9 @@ class Task:
 
 
 class Worker:
-    def __init__(self, memory_size, network_bandwidth, disk_bandwidth, status: WorkerStatus, failure_rate, straggle_rate, task: Task = None) -> None:
+    def __init__(self, memory_size, network_bandwidth,
+                 disk_bandwidth, status: WorkerStatus, failure_rate,
+                 straggle_rate, task: Task = None) -> None:
         self.memory_size = memory_size
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
@@ -104,29 +106,63 @@ class Event:
         return self.time < other.time
 
 
-class TaskGraph(nx.DiGraph):
-    subset_color = [
-        "gold",
-        "violet",
-        "limegreen",
-        "darkorange",
-    ]
+class Program:
+    task_topology = []
+    # hashmap of tasks that stores (dependent task, dependent data amount)
+    task_dependency_infos = {}
+    program_type = None  # "sort", "grep", or etc.
+    system_type = None  # "mapreduce", "dask", or etc.
 
-    def __init__(self, *task_topology: Tuple[int]):
+    def __init__(self, program_type="", system_type="", task_topology=[], **kwargs):
+        self.program_type = program_type
+        self.system_type = system_type
+        self.task_topology = task_topology
+
+
+class TaskGraph(nx.DiGraph):
+    def __init__(self, program):
         super().__init__()
-        extents = nx.utils.pairwise(itertools.accumulate((0,) + task_topology))
-        print(extents)
-        layers = [range(start, end) for start, end in extents]
-        print(layers)
+        self.subset_color = [
+            "gold",
+            "violet",
+            "limegreen",
+            "darkorange",
+        ]
+
+        if program.system_type == "mapreduce":
+            # task_topology = (M, R)
+            M, R = program.task_topology
+            layers = [range(M), range(M, M+R)]
+
+            for (i, layer) in enumerate(layers):
+                # list of Task objects
+                if i == 0:  # Map
+                    task_list = [dict(task=Task(task_id=t_id))
+                                 for t_id in layer]
+                else:  # Reduce
+                    task_list = [dict(task=Task(task_id=t_id))
+                                 for t_id in layer]
+                node_list = list(zip(list(layer), task_list))
+                print(node_list)
+                self.add_nodes_from(node_list, layer=i)
+            for layer1, layer2 in nx.utils.pairwise(layers):
+                self.add_edges_from(itertools.product(layer1, layer2))
+        else:
+            extents = nx.utils.pairwise(
+                itertools.accumulate((0,) + program.task_topology))
+            print(extents)
+            layers = [range(start, end) for start, end in extents]
+            print(layers)
+            for (i, layer) in enumerate(layers):
+                # list of Task objects
+                task_list = [dict(task=Task(task_id=t_id)) for t_id in layer]
+                node_list = list(zip(list(layer), task_list))
+                print(node_list)
+                self.add_nodes_from(node_list, layer=i)
+            for layer1, layer2 in nx.utils.pairwise(layers):
+                self.add_edges_from(itertools.product(layer1, layer2))
+
         print(self)
-        for (i, layer) in enumerate(layers):
-            # list of Task objects
-            task_list = [dict(task=Task(task_id=t_id)) for t_id in layer]
-            node_list = list(zip(list(layer), task_list))
-            print(node_list)
-            self.add_nodes_from(node_list, layer=i)
-        for layer1, layer2 in nx.utils.pairwise(layers):
-            self.add_edges_from(itertools.product(layer1, layer2))
 
     def debug(self):
         print("debugging graph\n")
