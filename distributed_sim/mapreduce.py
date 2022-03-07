@@ -1,3 +1,5 @@
+"""Uses classes and code from architecture.py to build the MapReduce specific task graph for grep and sort."""
+
 from .architecture import *
 from .utils import *
 from .types import *

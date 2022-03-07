@@ -1,3 +1,5 @@
+"""Uses classes and code from architecture.py to build the Dask specific task graph for grep and sort."""
+
 # build an array of blocked array algorithms
 
 # have some way to actually get the blocks

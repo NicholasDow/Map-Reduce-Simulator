@@ -1,3 +1,5 @@
+"""Contains all our classes for the simulator. Core of our logic. General"""
+
 from functools import reduce
 import networkx as nx
 import matplotlib.pyplot as plt
