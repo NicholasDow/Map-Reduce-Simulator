@@ -1,3 +1,5 @@
+"""For testing purposes only."""
+
 import networkx as nx
 import itertools
 import numpy as np
