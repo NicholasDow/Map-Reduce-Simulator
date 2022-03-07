@@ -350,6 +350,7 @@ class Scheduler:
 
         last_event = None
         print("starting to work through event_queue.\n")
+        print("size of event queue: ", len(event_queue))
         while not event_queue.empty():
             # print("processing an event")
             event = event_queue.get()
