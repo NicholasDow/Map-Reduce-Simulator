@@ -62,7 +62,8 @@ class Worker:
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
 
-    def check_distance(self, graph, other_worker):
+    def check_distance(self, WorkerGraph, other_worker_id):
+        return WorkerGraph[self.worker_id][other_worker_id]["weight"]
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
@@ -81,7 +82,7 @@ class Worker:
 
     def networking_time(self):
         # TODO: Have this function actually calculate networking time given its attributes
-
+        # self.task.task_dependencies
         return 5
 
     def disk_time(self):
