@@ -1,0 +1,6 @@
+__pycache__/
+venv/
+dist/
+build/
+.eggs/
+distributed_sim.egg-info/
