@@ -81,7 +81,7 @@ class Worker:
 
             n_rec = self.task.n_records
             task_parent = self.task.prog
-            total_processing_time += n_rec * np.log(n_rec)
+            total_processing_time += n_rec * np.log(n_rec) if task_parent == MReduceProg.distributedsort else n_rec
         elif self.task.task_op == MReduceOp.reduce:
             total_processing_time += self.disk_time()
             if task_parent == MReduceProg.distributedgrep:
