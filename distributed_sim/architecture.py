@@ -47,17 +47,21 @@ class Worker:
                  cache_size: int = 64,
                  cache_lines: int = 1024) -> None:
         # assume infinite memory size
+        self.
+
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
         self.status = status
         self.task = task
         self.failure_rate = failure_rate
         self.straggle_rate = straggle_rate
-        self.cache_size = 64
-        self.cache_lines = 1024 
+        self.cache_size = cache_size
+        self.cache_lines = cache_lines 
 
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
+
+    def check_distance(self, graph, other_worker):
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
@@ -76,6 +80,7 @@ class Worker:
 
     def networking_time(self):
         # TODO: Have this function actually calculate networking time given its attributes
+        
         return 5
 
     def disk_time(self):
