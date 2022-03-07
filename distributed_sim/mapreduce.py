@@ -19,17 +19,17 @@ class MRProcedure:
         self.workers = seed_workers(num_machines, max_distance)
         self.task_graph = None
         if self.prog == MReduceProg.distributedgrep:
-            self.n_map_tasks = int(n_rec / self.split_size)
+            self.n_map_tasks = int(n_records / self.split_size)
             self.n_shuffle_tasks = self.n_map_tasks
             self.n_shuffle_split = max(
-                1, int((n_rec*self.grep_selectivity)/self.split_size))
+                1, int((n_records*self.grep_selectivity)/self.split_size))
             self.n_reduce_tasks = 1
             self.task_graph = self._build_grep(
                 self.n_map_tasks, self.n_shuffle_tasks, self.n_reduce_tasks, self.split_size, self.shuffle_split)
         if self.prog == MReduceProg.distributedsort:
-            self.n_map_tasks = n_rec / self.split_size
-            self.n_shuffle_tasks = n_map_tasks
-            self.n_reduce_tasks = min(n_map_tasks, num_mach * 3)
+            self.n_map_tasks = (int)(n_records / self.split_size)
+            self.n_shuffle_tasks = self.n_map_tasks
+            self.n_reduce_tasks = min(self.n_map_tasks, num_machines * 3)
             self.task_graph = self._build_sort(
                 self.n_map_tasks, self.n_shuffle_tasks, self.n_reduce_tasks, self.split_size)
         self.scheduler = Scheduler(
@@ -101,7 +101,7 @@ class MRProcedure:
         # shuffle task (synchro barrier)
         t.add_layer(
             [Task(parent_prog=MReduceProg.distributedsort,
-                  task_id=n_map_tasks + n_shuffle_tasks, task_op=MReduceOp.barrier, n_records=n_rec)],
+                  task_id=n_map_tasks + n_shuffle_tasks, task_op=MReduceOp.barrier, n_records=n_shuffle_tasks*split_size)],
             starting_idx=n_map_tasks + n_shuffle_tasks,
             option=TaskLayerChoices.fully_connected)
         # reduce tasks
@@ -109,7 +109,7 @@ class MRProcedure:
         for i in range(n_reduce_tasks):
             reducetask_list.append(
                 Task(parent_prog=MReduceProg.distributedsort,
-                     task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=n_rec/n_reduce_tasks))
+                     task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=split_size))
         t.add_layer(reducetask_list, starting_idx=n_map_tasks + n_shuffle_tasks+1,
                     option=TaskLayerChoices.fully_connected)
         t.print_graph()
