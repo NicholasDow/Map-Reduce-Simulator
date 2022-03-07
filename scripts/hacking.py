@@ -1,5 +1,6 @@
 import networkx as nx
 import itertools
+import numpy as np
 import random
 
 s = nx.DiGraph()
@@ -12,3 +13,6 @@ for x in itertools.combinations(idxs, 2):
 # print(weighted_edge_triples)
 s.add_weighted_edges_from(weighted_edge_triples)
 print(s.get_edge_data(0, 6))
+
+
+print(np.random.normal(0, 10, 1))

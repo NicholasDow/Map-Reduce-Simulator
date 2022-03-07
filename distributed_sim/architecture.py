@@ -1,3 +1,4 @@
+from functools import reduce
 import networkx as nx
 import matplotlib.pyplot as plt
 import itertools
@@ -24,6 +25,7 @@ class Task:
         self.status = task_status
         self.prog = parent_prog
         self.task_dependencies = task_dependencies
+        self.dependency_l = []
         self.task_parameters = {
             "task_type": self.task_op.name,
             "n_records": self.n_records,
@@ -39,6 +41,7 @@ class Task:
 class Worker:
     def __init__(self,
                  worker_id: int,
+                 max_straggle_time: int = 100,  # cap straggle time at 100s
                  network_bandwidth: int = 100,
                  disk_bandwidth: int = 50,
                  failure_rate: int = 0.1,
@@ -57,6 +60,8 @@ class Worker:
         self.straggle_rate = straggle_rate
         self.cache_size = cache_size
         self.cache_lines = cache_lines
+        self.straggle_cnt = 0
+        self.max_straggle_time = max_straggle_time
 
         self.bandwidth_status = {}  # {Worker: bandwidth_usage}
         self.current_bandwidth = 0
@@ -66,37 +71,55 @@ class Worker:
 
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
-        # can't have this for reasons in scheduler
-        # total_processing_time += self.networking_time()
-        total_processing_time += self.disk_time()
+        self.task.debug()
+        assert self.task is not None
+        print(self.task.task_op)
+        if self.task.task_op == MReduceOp.map:
+            # can't have this for reasons in scheduler
+            # total_processing_time += self.networking_time()
+            total_processing_time += self.disk_time()
 
-        task_op = self.task.task_op
-        n_rec = self.task.n_records
-        task_parent = self.task.prog
-        if task_parent == MReduceProg.distributedsort:
-            total_processing_time += n_rec * np.log(n_rec)
-        if task_parent == MReduceProg.distributedgrep:
-            total_processing_time += n_rec
+            n_rec = self.task.n_records
+            task_parent = self.task.prog
+            total_processing_time += n_rec * np.log(n_rec) if task_parent == MReduceProg.distributedsort else n_rec
+        elif self.task.task_op == MReduceOp.reduce:
+            total_processing_time += self.disk_time()
+            if task_parent == MReduceProg.distributedgrep:
+                total_processing_time = (1/self.network_bandwidth)
+            elif task_parent == MReduceProg.distributedsort:
+                equal_distance = 10
+                # assuming uniform distance
+                total_processing_time = (
+                    1/self.network_bandwidth) * 10 + 2*16*self.task.n_records * (1/self.disk_bandwidth)
+        elif self.task.task_op == MReduceOp.shuffle:
+            total_processing_time += self.transfer_time()
+        else:
+            total_processing_time += 0
 
         return [EventType.TERMINATE, total_processing_time]
 
-    def networking_time(self):
-        # TODO: Have this function actually calculate networking time given its attributes
-        self.task.task_dependencies
-        return 5
-
     def disk_time(self):
-        # TODO: Have this function actually calculate networking time given its attributes
+        # TODO: Have this function calculate networking time given its attributes
         size_of_record = 16
         size_of_records = self.task.n_records * size_of_record
         if self.task.prog == MReduceProg.distributedsort:
             # I using the equation they have here: https://en.wikipedia.org/wiki/Cache-oblivious_distribution_sort
             # I don't know what the size of the records are, we assume a tall cache.
-            disk_time = (size_of_records/self.cache_lines) * \
-                math.log(size_of_records, self.cache_size)
+            # I also assume that we have 2n that we have to write to memory
+            disk_time = (1/self.disk_bandwidth) * ((size_of_records/self.cache_lines) *
+                                                   math.log(size_of_records, self.cache_size) + 2*size_of_records)
         if self.task.prog == MReduceProg.distributedgrep:
-            disk_time = size_of_records/(self.cache_lines)
-        return (1/self.disk_bandwidth) * disk_time
+            disk_time = (1/self.disk_bandwidth) * \
+                size_of_records/(self.cache_lines)
+        return disk_time
+
+    # TODO: fix network bandwidth
+    def transfer_time(self):
+        n_rec = self.task.n_records
+        return n_rec * np.log(n_rec) + self.network_bandwidth
+
+    def debug(self):
+        print("straggle count: ", self.straggle_cnt)
 
 
 class Event:
@@ -161,12 +184,13 @@ class TaskGraph(nx.DiGraph):
                   starting_idx: int):
         self.range = range(starting_idx, starting_idx + len(task_list))
         # add dependencies to each task
-        for i, task in enumerate(task_list):
+        for i, _ in enumerate(task_list):
             if option == TaskLayerChoices.one_to_one:
                 assert len(task_list) == len(self.prev_task_list)
-                task_list[i].task_dependencies = [self.prev_task_list[i]]
+                task_list[i].dependency_l = [self.prev_task_list[i]]
             elif option == TaskLayerChoices.fully_connected:
-                task_list[i].task_dependencies = self.prev_task_list
+                task_list[i].dependency_l = self.prev_task_list
+            task_list[i].task_dependencies = len(task_list[i].dependency_l)
         # transform task list
         ttask_list = [dict(task=t) for t in task_list]
         # add nodes to graph
@@ -211,7 +235,6 @@ class WorkerGraph(nx.DiGraph):
     def seed_network_topology(self):
         # add all combinational pairs
         idxs = list(range(len(self.workers)))
-        print(idxs)
         self.add_nodes_from(idxs)
         weighted_edge_triples = []
         for x in itertools.combinations(idxs, 2):
@@ -262,72 +285,99 @@ class WorkerGraph(nx.DiGraph):
 
 class Scheduler:
 
-    def __init__(self, task_graph: TaskGraph, workers: WorkerGraph) -> None:
+    def __init__(self,
+                 task_graph: TaskGraph,
+                 workers: WorkerGraph,
+                 failure_penalty: int) -> None:
         self.g = task_graph  # Graph of tasks
         self.workers = workers  # List of workers
+        self.curr_time = 0
+        self.failure_penalty = failure_penalty
+        self.task_queue = Queue()  # task queue as a topologically sorted task graph
+        self.event_queue = PriorityQueue()  # priority queue for events
+        self.free_worker_list = self.workers  # list to store the free workers
 
-    def simulate(self) -> None:
+    def simulate(self) -> bool:
         # choose a first task from the head of the queue
         # task is ready
         # hashmap of workers which stores the busy/free workers
         # assign task to the worker
         # create an event, some time units for the task insert the event in priority queue
 
-        current_time = 0
-        task_queue = Queue()  # task queue as a topologically sorted task graph
-        event_queue = PriorityQueue()  # priority queue for events
-        free_worker_list = self.workers  # list to store the free workers
-
-        print(self.g.nodes)
-        # initiliaze the task dependency numbers
+        # add the ready tasks to the queue
+        tasks_complete = True
         for node_number in self.g.nodes:
-            # TODO: add task_dependencies to TaskGraph()
             node = self.g.nodes[node_number]
-            node["task"].task_dependencies = self.g.in_degree(node_number)
-            if (node["task"].task_dependencies == 0):
-                # add the ready tasks to the queue
-                task_queue.put(node["task"])
+            if node["task"].status != TaskStatus.COMPLETE:
+                tasks_complete = False
+            if (node["task"].task_dependencies == 0
+                    and node["task"].status == TaskStatus.UNASSIGNED):
+                node["task"].status = TaskStatus.PENDING
+                self.task_queue.put(node["task"])
+            if tasks_complete:
+                # stops simulation forever
+                print("------final time------")
+                print(self.curr_time)
+                return False
 
-        self.g.debug()
+        # self.g.debug()
 
         print("starting to work through task_queue.\n")
-        while not task_queue.empty():  # iterate through the tasks that are ready to execute
-            task = task_queue.get()  # get the first task from the queue
-            if free_worker_list.empty():
+        while not self.task_queue.empty():  # iterate through the tasks that are ready to execute
+            task = self.task_queue.get()  # get the first task from the queue
+            if self.free_worker_list.empty():
                 break
-            worker = free_worker_list.pop()  # remove a worker from the free_list
+            worker = self.free_worker_list.pop()  # remove a worker from the free_list
             worker.task = task  # assign the task to the worker
             worker.status = WorkerStatus.BUSY
             # get the approximate processing time and the probabilistic fate of the worker
             event_type, task_process_time = worker.processing_time()
+            # fail an event (i.e. put at back of queue)
+            if random.random() < worker.failure_rate:
+                self.task_queue.put(worker)
+                self.curr_time += self.failure_penalty
+                continue
+            # straggle with some probability
+            straggle_time = 0
+            if random.random() < worker.straggle_rate:
+                worker.straggle_cnt += 1
+                straggle_time = abs(np.random.normal(
+                    0, worker.max_straggle_time, 1)[0])
             # create an event with the above parameters
-            event = Event(current_time + task_process_time, event_type, worker)
-            event_queue.put(event)  # add the event to the event queue
+            event = Event(self.curr_time + task_process_time +
+                          straggle_time, event_type, worker)
+            # add the event to the event queue
+            self.event_queue.put(event)
 
         last_event = None
         print("starting to work through event_queue.\n")
-        while not event_queue.empty():
+        # print("size of event queue: ", len(list(event_queue)))
+        while not self.event_queue.empty():
             # print("processing an event")
-            event = event_queue.get()
+            event = self.event_queue.get()
             last_event = event
             # print(event)
             # print("processed an event")
             if (event.event_type == EventType.TERMINATE):
                 # print("in here")
                 worker = event.worker
-                worker.task.status = TaskStatus.COMPLETE
+                task = event.worker.task
+                task.status = TaskStatus.COMPLETE
                 # get the out-edges of a task
-                for k in (self.g[worker.task.task_id].keys()):
+                for k in (self.g[task.task_id].keys()):
                     # decrement the dependecies of all out_going edges
                     self.g.nodes[k]["task"].task_dependencies -= 1
                     # if dependencies of a task are 0, it is ready to be added into the task queue
-                    if (self.g.nodes[k]["task"].task_dependencies == 0):
-                        task_queue.put(self.g.nodes[k]["task"])
+                    if self.g.nodes[k]["task"].task_dependencies == 0:
+                        self.task_queue.put(self.g.nodes[k]["task"])
                 # print("got out of for loop")
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
                 # add the worker to the free list
-                free_worker_list.append(worker)
-
-        print(f"Last event time: {last_event.time}")
-        return None
+                self.free_worker_list.append(worker)
+        # check the last event
+        if not last_event is None:
+            print(f"Last event time: {last_event.time}")
+            self.curr_time += last_event.time
+        # allows simulation to continue
+        return True

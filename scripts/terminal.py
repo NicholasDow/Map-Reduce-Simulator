@@ -10,10 +10,10 @@ def system_input():
     sys_value = click.prompt('Please select a system', type=int)
     click.echo("Available Procedures: ")
     if sys_value == SystemOptions.dask.value:
-        for j in MReduceProg:
+        for j in DaskProg:
             click.echo(f"[{j.value}] {j.name}")
     elif sys_value == SystemOptions.mapreduce.value:
-        for j in DaskProg:
+        for j in MReduceProg:
             click.echo(f"[{j.value}] {j.name}")
     prog_value = click.prompt('Please select a procedure', type=int)
     if sys_value == SystemOptions.mapreduce.value:
@@ -21,8 +21,8 @@ def system_input():
                           n_records=1000,
                           max_distance=10,
                           prog_type=MReduceProg(prog_value))
-    click.confirm('Do you want to continue?', abort=True)
-    sys.run()
+        click.confirm('Do you want to continue?', abort=True)
+        sys.run()
 
 
 # meant as a command line program for users to specify different systems and operations

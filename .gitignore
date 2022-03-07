@@ -4,3 +4,4 @@ dist/
 build/
 .eggs/
 distributed_sim.egg-info/
+whatever/
