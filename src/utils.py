@@ -143,6 +143,49 @@ class TaskGraph(nx.DiGraph):
         plt.show()
 
 
+class WorkerGraph(nx.DiGraph):
+    workers = []
+
+    def add_workers(self, workers):
+        self.workers = workers
+        idxs = range(len(workers))
+        self.add_nodes_from(idxs)
+        # add all combinational pairs
+        self.add_weighted_edges_from(
+            [x + (0,) for x in itertools.combinations(idxs, 2)], 'bandwidth')
+
+    def print_graph(self):
+        labels = nx.get_edge_attributes(self, 'bandwidth')
+        pos = nx.spring_layout(self)
+        nx.draw(self, pos, with_labels=True)
+        nx.draw_networkx_edge_labels(self, pos, edge_labels=labels)
+
+    def get_in_bandwidth(self, worker):
+        worker_idx = self.workers.index(worker)
+        return self.in_degree(worker_idx, weight='bandwidth')
+
+    def get_out_bandwidth(self, worker):
+        worker_idx = self.workers.index(worker)
+        return self.out_degree(worker_idx, weight='bandwidth')
+
+    def get_current_bandwidth(self, worker):
+        return self.get_in_bandwidth(worker) + self.get_out_bandwidth(worker)
+
+    def request(self, src_worker, dest_worker):
+        src_worker_idx, dest_worker_idx = self.workers.index(
+            src_worker), self.workers.index(dest_worker)
+        # start with the easiest one
+        # request as much as both source and dest can afford at the same time
+        bandwidth = min(src_worker.network_bandwidth - self.get_current_bandwidth(src_worker),
+                        dest_worker.network_bandwidth - self.get_current_bandwidth(dest_worker))
+
+        # update bandwidth-weighted edges
+        self.add_edge(src_worker_idx, dest_worker_idx, bandwidth=bandwidth)
+        print(self[src_worker_idx][dest_worker_idx]['bandwidth'])
+
+        return bandwidth
+
+
 class Scheduler:
 
     def __init__(self, task_graph: TaskGraph, Workers: List[Worker]) -> None:
