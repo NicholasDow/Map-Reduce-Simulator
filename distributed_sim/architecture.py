@@ -74,8 +74,8 @@ class Worker:
     def processing_time(self) -> List[Union[EventType, int]]:
         total_processing_time = 0
         task = self.task
-        print(task)
-        print(type(task))
+        #print(task)
+        #print(type(task))
         if (self.task).task_op == MReduceOp.map:
             # can't have this for reasons in scheduler
             # total_processing_time += self.networking_time()
@@ -419,7 +419,7 @@ class DaskScheduler:
                 # add the ready tasks to the queue
                 task_queue.put(node["task"])
 
-        self.g.debug()
+        #self.g.debug()
 
         print("starting to work through task_queue.\n")
         while not task_queue.empty():  # iterate through the tasks that are ready to execute

@@ -1,5 +1,3 @@
-"""Uses classes and code from architecture.py to build the MapReduce specific task graph for grep and sort."""
-
 from .architecture import *
 from .utils import *
 from .types import *
@@ -80,6 +78,7 @@ class MRProcedure:
                      task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=n_shuffle_tasks*shuffle_split))
         t.add_layer(reducetask_list, starting_idx=n_map_tasks + n_shuffle_tasks+1,
                     option=TaskLayerChoices.fully_connected)
+        
         return t
 
     @staticmethod
@@ -114,6 +113,7 @@ class MRProcedure:
                      task_id=i+n_map_tasks + n_shuffle_tasks+1, task_op=MReduceOp.reduce, n_records=split_size))
         t.add_layer(reducetask_list, starting_idx=n_map_tasks + n_shuffle_tasks+1,
                     option=TaskLayerChoices.fully_connected)
+        
         return t
 
     def run(self):
