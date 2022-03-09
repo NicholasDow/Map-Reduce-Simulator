@@ -7,6 +7,7 @@ import itertools
 import numpy as np
 from typing import Dict, List, Union, Tuple
 from enum import Enum, auto
+from collections import deque
 from queue import Queue, PriorityQueue
 import random
 from .types import *
@@ -42,6 +43,8 @@ class Task:
 
 class Worker:
     def __init__(self,
+                 is_switch: bool,
+                 max_port_connections: int,
                  worker_id: int,
                  max_straggle_time: int = 100,  # cap straggle time at 100s
                  network_bandwidth: int = 100,
@@ -53,6 +56,8 @@ class Worker:
                  cache_size: int = 64,
                  cache_lines: int = 1024) -> None:
         # assume infinite memory size
+        self.is_switch = is_switch
+        self.max_port_connections = max_port_connections
         self.worker_id = worker_id
         self.network_bandwidth = network_bandwidth
         self.disk_bandwidth = disk_bandwidth
@@ -227,12 +232,13 @@ class TaskGraph(nx.DiGraph):
 class WorkerGraph(nx.DiGraph):
     workers = []
 
-    def __init__(self, workers, max_distance):
+    def __init__(self, workers, max_distance, seed_network: bool):
         super().__init__()
         self.workers = workers
         self.free_workers = workers
         self.max_distance = max_distance
-        self.seed_network_topology()
+        if seed_network:
+            self.seed_network_topology()
 
     def seed_network_topology(self):
         # add all combinational pairs
@@ -255,9 +261,12 @@ class WorkerGraph(nx.DiGraph):
 
     def print_graph(self):
         labels = nx.get_edge_attributes(self, 'bandwidth')
-        pos = nx.spring_layout(self)
+        pos = nx.multipartite_layout(self, subset_key="layer")
+        plt.figure(figsize=(8, 8))
         nx.draw(self, pos, with_labels=True)
         nx.draw_networkx_edge_labels(self, pos, edge_labels=labels)
+        plt.axis("equal")
+        plt.show()
 
     def get_in_bandwidth(self, worker):
         worker_idx = self.workers.index(worker)
@@ -285,6 +294,69 @@ class WorkerGraph(nx.DiGraph):
         return bandwidth
 
 
+class WorkerNetwork(WorkerGraph):
+    def __init__(self, workers: List[Worker],
+                 workers_per_switch: int,
+                 link_bandwidth: int,
+                 max_port: int):
+        super().__init__(workers=workers,
+                         max_distance=link_bandwidth,
+                         seed_network=False)
+        self.link_bandwidth = link_bandwidth
+        self.workers_per_switch = workers_per_switch
+        self.max_port = max_port
+        self.num_switches = int(len(workers) / workers_per_switch) + 1
+        self.master = None
+        self.children = []
+        self.switch_tree = {}
+        self.curr_id_cnt = len(workers)
+        self._init_master()
+        self._init_child_switches()
+        self._connect_node_to_list(self.master, self.children, layer=1)
+        self._distribute_workers_to_switches()
+
+    def _init_master(self):
+        # master should not straggle for now
+        self.master = Worker(worker_id=self.curr_id_cnt,
+                             max_port_connections=self.max_port,
+                             is_switch=True, straggle_rate=0, failure_rate=0)
+        self.curr_id_cnt += 1
+        self.add_nodes_from([self.master.worker_id], layer=0)
+
+    def _init_child_switches(self):
+        if self.master is None:
+            raise Exception(
+                "Please _init_master before _init_child_switches.")
+        for _ in range(self.num_switches):
+            self.children.append(Worker(worker_id=self.curr_id_cnt,
+                                        max_port_connections=self.max_port,
+                                        is_switch=True, straggle_rate=0, failure_rate=0))
+            self.curr_id_cnt += 1
+
+    def _connect_node_to_list(self, n: Worker, worker_list: List[Worker], layer: int):
+        # generic function for connecting a given node to corresponding worker list
+        if n is None or len(worker_list) == 0:
+            raise Exception(
+                "Please _init_master and _init_child_switches.")
+        weighted_edge_triples = []
+        for c in worker_list:
+            self.add_nodes_from([c.worker_id], layer=layer)
+            weighted_edge_triples.append(
+                (n.worker_id, c.worker_id, self.link_bandwidth))
+        # note that switch tree is updated to include the worker list
+        self.switch_tree[n] = worker_list
+        self.add_weighted_edges_from(weighted_edge_triples)
+
+    def _distribute_workers_to_switches(self):
+        worker_chunks = [self.workers[i:i+self.workers_per_switch]
+                         for i in range(0, len(self.workers), self.workers_per_switch)]
+        assert len(worker_chunks) <= self.num_switches
+        for i, worker_chunk in enumerate(worker_chunks):
+            # use the convenient helper function defined before
+            self._connect_node_to_list(
+                n=self.children[i], worker_list=worker_chunk, layer=2)
+
+
 class Scheduler:
 
     def __init__(self,
@@ -295,7 +367,7 @@ class Scheduler:
         self.workers = workers  # List of workers
         self.curr_time = 0
         self.failure_penalty = failure_penalty
-        self.task_queue = Queue()  # task queue as a topologically sorted task graph
+        self.task_queue = deque()  # task queue as a topologically sorted task graph
         self.event_queue = PriorityQueue()  # priority queue for events
         self.free_worker_list = self.workers  # list to store the free workers
 
@@ -315,7 +387,7 @@ class Scheduler:
             if (node["task"].task_dependencies == 0
                     and node["task"].status == TaskStatus.UNASSIGNED):
                 node["task"].status = TaskStatus.PENDING
-                self.task_queue.put(node["task"])
+                self.task_queue.append(node["task"])
             if tasks_complete:
                 # stops simulation forever
                 print("------final time------")
@@ -325,8 +397,8 @@ class Scheduler:
         # self.g.debug()
 
         print("starting to work through task_queue.\n")
-        while not self.task_queue.empty():  # iterate through the tasks that are ready to execute
-            task = self.task_queue.get()  # get the first task from the queue
+        while len(self.task_queue) != 0:  # iterate through the tasks that are ready to execute
+            task = self.task_queue.popleft()  # get the first task from the queue
             if self.free_worker_list.empty():
                 break
             worker = self.free_worker_list.pop()  # remove a worker from the free_list
@@ -336,7 +408,7 @@ class Scheduler:
             event_type, task_process_time = worker.processing_time()
             # fail an event (i.e. put at back of queue)
             if random.random() < worker.failure_rate:
-                self.task_queue.put(worker.task)
+                self.task_queue.appendleft(worker.task)
                 self.curr_time += self.failure_penalty
                 continue
             # straggle with some probability
@@ -371,7 +443,7 @@ class Scheduler:
                     self.g.nodes[k]["task"].task_dependencies -= 1
                     # if dependencies of a task are 0, it is ready to be added into the task queue
                     if self.g.nodes[k]["task"].task_dependencies == 0:
-                        self.task_queue.put(self.g.nodes[k]["task"])
+                        self.task_queue.append(self.g.nodes[k]["task"])
                 # print("got out of for loop")
                 worker.task = None  # remove the task from the worker
                 worker.status = WorkerStatus.FREE  # mark the status of the worker to free
